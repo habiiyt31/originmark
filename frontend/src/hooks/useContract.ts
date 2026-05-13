@@ -222,32 +222,31 @@ export function useDisputesForWork(certId: number | null) {
     setLoading(true);
     try {
       const client = getReadClient();
-      const stats = await client.readContract({
-        address: CONTRACT_ADDRESS as `0x${string}`,
-        functionName: "get_stats",
-        args: [],
-      }) as unknown as ContractStats;
 
-      const total = Number(stats?.total_disputes ?? 0);
-      if (total === 0) { setDisputes([]); return; }
-
-      // Fetch all disputes, filter by cert_id
-      const ids = Array.from({ length: total }, (_, i) => i);
-      const all = await Promise.all(
-        ids.map(async (id) => {
-          try {
-            const r = await client.readContract({
-              address: CONTRACT_ADDRESS as `0x${string}`,
-              functionName: "get_dispute",
-              args: [id] as any,
-            }) as any;
-            return r && r.dispute_id !== undefined ? (r as DisputeRecord) : null;
-          } catch { return null; }
-        })
-      );
-      setDisputes(
-        all.filter((d): d is DisputeRecord => d !== null && Number(d.cert_id) === certId)
-      );
+      // Brute-force: try fetching dispute IDs 0..49
+      // Stops when get_dispute throws (no more disputes)
+      const MAX_SCAN = 50;
+      const found: DisputeRecord[] = [];
+      for (let id = 0; id < MAX_SCAN; id++) {
+        try {
+          const r = await client.readContract({
+            address: CONTRACT_ADDRESS as `0x${string}`,
+            functionName: "get_dispute",
+            args: [id] as any,
+          }) as any;
+          if (!r || r.dispute_id === undefined) break;
+          const normalized = {
+            ...r,
+            reasoning: r.reasoning ?? r.reason ?? "",
+          } as DisputeRecord;
+          if (Number(normalized.cert_id) === certId) {
+            found.push(normalized);
+          }
+        } catch {
+          break; // no more disputes
+        }
+      }
+      setDisputes(found);
     } catch (e) {
       console.error("disputes-for-work:", e);
       setDisputes([]);

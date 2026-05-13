@@ -12,15 +12,24 @@ export function WorkCard({ work, showActions = false }: { work: IPRecord; showAc
   return (
     <article className="card-hover p-5 group">
       <div className="flex items-start justify-between mb-4">
-        <span className="font-mono text-xs text-amber/60">#{String(work.cert_id).padStart(4, "0")}</span>
+        <Link href={`/work/${work.cert_id}`} className="font-mono text-xs text-amber/60 hover:text-amber transition-colors">
+          #{String(work.cert_id).padStart(4, "0")}
+        </Link>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-ink-500 bg-ink-700 px-1.5 py-0.5">{MEDIA_ICONS[work.media_type] ?? "OTH"}</span>
           {!work.is_active && <span className="text-xs font-mono bg-rust/15 text-rust border border-rust/30 px-2 py-0.5">revoked</span>}
         </div>
       </div>
-      <h3 className="font-display text-base font-semibold text-ink-100 mb-1 line-clamp-2 leading-snug">{work.title}</h3>
+
+      <Link href={`/work/${work.cert_id}`} className="block group/title">
+        <h3 className="font-display text-base font-semibold text-ink-100 mb-1 line-clamp-2 leading-snug group-hover/title:text-amber transition-colors">
+          {work.title}
+        </h3>
+      </Link>
       <p className="text-xs text-ink-300 line-clamp-2 mb-4 leading-relaxed">{work.description}</p>
+
       <div className="divider mb-4" />
+
       <div className="grid grid-cols-2 gap-3 mb-4 text-xs">
         <div>
           <p className="text-ink-400 mb-0.5">Creator</p>
@@ -44,6 +53,7 @@ export function WorkCard({ work, showActions = false }: { work: IPRecord; showAc
           <p className="font-mono text-sage-light">{fromWeiStr(work.total_royalties)} GEN</p>
         </div>
       </div>
+
       {work.source_url && (
         <a href={work.source_url} target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-1 text-xs text-ink-400 hover:text-amber transition-colors truncate mb-4">
@@ -53,12 +63,21 @@ export function WorkCard({ work, showActions = false }: { work: IPRecord; showAc
           <span className="truncate">{work.source_url}</span>
         </a>
       )}
+
       {showActions && work.is_active && (
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-3">
           <Link href={`/dispute?cert_id=${work.cert_id}`} className="btn-secondary text-xs px-3 py-2 flex-1 text-center">Dispute</Link>
           <Link href={`/license?cert_id=${work.cert_id}`} className="btn-primary text-xs px-3 py-2 flex-1 text-center">License</Link>
         </div>
       )}
+
+      <Link href={`/work/${work.cert_id}`}
+        className="flex items-center justify-center gap-1 text-xs font-mono text-ink-500 hover:text-amber transition-colors w-full py-1">
+        View details
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </Link>
     </article>
   );
 }
