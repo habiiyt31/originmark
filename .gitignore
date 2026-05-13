@@ -1,0 +1,70 @@
+# =========================================
+# ORIGINMARK GITIGNORE
+# =========================================
+
+# =========================================
+# NODE / NEXT.JS
+# =========================================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+
+# package manager logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# TypeScript
+frontend/*.tsbuildinfo
+
+# =========================================
+# ENV FILES
+# =========================================
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# =========================================
+# PYTHON / GENLAYER
+# =========================================
+contracts/__pycache__/
+contracts/*.py[cod]
+contracts/*.pyo
+
+# Python virtual environment
+venv/
+.venv/
+
+# GenLayer local files
+.genlayer/
+
+# =========================================
+# COVERAGE / TEMP
+# =========================================
+coverage/
+tmp/
+temp/
+*.log
+
+# =========================================
+# SYSTEM FILES
+# =========================================
+.DS_Store
+Thumbs.db
+
+# =========================================
+# EDITOR FILES
+# =========================================
+.vscode/
+.idea/
+
+# =========================================
+# OPTIONAL
+# =========================================
+*.swp
+*.swo
