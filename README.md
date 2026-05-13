@@ -1,6 +1,6 @@
 # OriginMark — AI-Powered Onchain IP Registry & Infringement Court
 
-A decentralized intellectual property registry powered by **GenLayer Intelligent Contracts**.
+OriginMark is an AI-Powered On-Chain IP Registry & Infringement Court, built on GenLayer.
 
 OriginMark allows creators to:
 - register creative works on-chain
