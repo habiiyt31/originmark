@@ -28,7 +28,7 @@ export function useStats() {
         functionName: "get_stats",
         args: [],
       });
-      setStats(result as ContractStats);
+      setStats(result as unknown as ContractStats);
     } catch (e) {
       console.error("get_stats:", e);
     } finally {
