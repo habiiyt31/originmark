@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { WorkCard } from "@/components/WorkCard";
 import { TxStatus } from "@/components/TxStatus";
@@ -16,10 +17,11 @@ export default function MyWorksPage() {
 
   async function revoke(certId: number) {
     if (!address) return;
+    if (!confirm(`Revoke work #${certId}? This will disable licensing.`)) return;
+
     setRevoking(certId);
     setTx({ status: "pending", message: `Revoking work #${certId}...` });
     try {
-      // revoke_work(cert_id: u256) — cert_id Number, no value
       const { txHash, timedOut } = await writeContract(
         "revoke_work",
         [Number(certId)]
@@ -57,6 +59,9 @@ export default function MyWorksPage() {
     );
   }
 
+  const activeCount  = works.filter(w => w.is_active).length;
+  const revokedCount = works.length - activeCount;
+
   return (
     <div className="min-h-dvh flex flex-col">
       <Navbar />
@@ -65,16 +70,31 @@ export default function MyWorksPage() {
           <div>
             <p className="section-label mb-2">Your portfolio</p>
             <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-50">My Works</h1>
+            {works.length > 0 && (
+              <p className="text-xs text-ink-500 mt-2 font-mono">
+                {activeCount} active · {revokedCount} revoked
+              </p>
+            )}
           </div>
-          <div className="text-right">
-            <p className="font-mono text-2xl font-medium text-amber">{works.length}</p>
-            <p className="text-xs text-ink-400">registered</p>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={refetch}
+              disabled={loading}
+              className="text-xs font-mono text-ink-400 hover:text-amber transition-colors px-2 py-1 disabled:opacity-50"
+              title="Refresh"
+            >
+              {loading ? "..." : "↻ refresh"}
+            </button>
+            <div className="text-right">
+              <p className="font-mono text-2xl font-medium text-amber">{works.length}</p>
+              <p className="text-xs text-ink-400">registered</p>
+            </div>
           </div>
         </div>
 
         {tx.status !== "idle" && <div className="mb-6"><TxStatus {...tx} /></div>}
 
-        {loading && (
+        {loading && works.length === 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {[1,2,3].map(i => (
               <div key={i} className="card p-5 space-y-3">
@@ -85,15 +105,15 @@ export default function MyWorksPage() {
           </div>
         )}
 
-        {!loading && works.length > 0 && (
+        {works.length > 0 && (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {works.map(work => (
-              <div key={work.cert_id} className="relative group">
+              <div key={Number(work.cert_id)} className="relative group">
                 <WorkCard work={work} showActions />
                 {work.is_active && (
-                  <button onClick={() => revoke(work.cert_id)} disabled={revokingId === work.cert_id}
+                  <button onClick={() => revoke(Number(work.cert_id))} disabled={revokingId === Number(work.cert_id)}
                     className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity text-xs font-mono text-rust hover:underline px-2 py-1">
-                    {revokingId === work.cert_id ? "..." : "revoke"}
+                    {revokingId === Number(work.cert_id) ? "..." : "revoke"}
                   </button>
                 )}
               </div>
@@ -107,8 +127,13 @@ export default function MyWorksPage() {
               <div className="w-5 h-5 border border-ink-500" />
             </div>
             <h3 className="font-display text-lg text-ink-100 mb-2">No works yet</h3>
-            <p className="text-sm text-ink-400 mb-6">Register your first creative work to see it here.</p>
-            <a href="/register" className="btn-primary">Register a work</a>
+            <p className="text-sm text-ink-400 mb-6 max-w-sm mx-auto">
+              Register your first creative work, or explore what others have registered.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link href="/register" className="btn-primary">Register a work</Link>
+              <Link href="/explore"  className="btn-secondary">Explore registry</Link>
+            </div>
           </div>
         )}
       </main>

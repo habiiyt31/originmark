@@ -1,9 +1,12 @@
 "use client";
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { TxStatus } from "@/components/TxStatus";
 import { useWallet } from "@/hooks/useWallet";
-import { weiArg, toWei } from "@/lib/genlayer";
+import { weiArg, toWei, fromWeiStr, getReadClient, CONTRACT_ADDRESS } from "@/lib/genlayer";
+import { shortAddr } from "@/lib/utils";
+import type { IPRecord } from "@/types";
 
 const REG_FEE = "0.01";
 const MEDIA_TYPES = ["image", "music", "text", "video", "other"] as const;
@@ -36,6 +39,50 @@ const EXAMPLES = [
 type TxState     = { status: "idle"|"pending"|"success"|"error"; hash?: string; message?: string; result?: string; };
 type UploadState = { status: "idle"|"uploading"|"done"|"error"; message?: string; };
 
+/**
+ * After a successful register tx, we don't have direct access to the return
+ * value (genlayer-js doesn't surface contract returns in receipts the same
+ * way EVM events do). Strategy: read get_creator_works(address) and pick the
+ * highest cert_id — that's the work we just registered.
+ *
+ * Polls for up to 30s in case the read RPC hasn't seen the new state yet.
+ */
+async function findNewlyRegistered(
+  address: string,
+  knownIds: Set<number>,
+  timeoutMs = 30_000
+): Promise<IPRecord | null> {
+  const client = getReadClient();
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const ids = await client.readContract({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: "get_creator_works",
+        args: [address] as any,
+      }) as Array<number | bigint | string>;
+
+      const newIds = (ids || [])
+        .map(Number)
+        .filter(id => !knownIds.has(id));
+
+      if (newIds.length > 0) {
+        const newest = Math.max(...newIds);
+        const work = await client.readContract({
+          address: CONTRACT_ADDRESS as `0x${string}`,
+          functionName: "get_work",
+          args: [newest] as any,
+        }) as any;
+        if (work && work.cert_id !== undefined) return work as IPRecord;
+      }
+    } catch (e) {
+      console.warn("Polling for new work:", e);
+    }
+    await new Promise(r => setTimeout(r, 2500));
+  }
+  return null;
+}
+
 export default function RegisterPage() {
   const { address, isConnected, connect, writeContract } = useWallet();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -45,6 +92,10 @@ export default function RegisterPage() {
   const [fileName, setFileName] = useState("");
   const [exampleIdx, setExampleIdx] = useState(0);
 
+  // Success card state
+  const [registered, setRegistered] = useState<IPRecord | null>(null);
+  const [resolvingWork, setResolving] = useState(false);
+
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
   const valid = form.title.trim().length >= 3 && form.description.trim().length >= 20 && form.source_url.trim().length > 0;
 
@@ -53,6 +104,13 @@ export default function RegisterPage() {
     setForm({ title: ex.title, description: ex.description, media_type: ex.media_type, source_url: ex.source_url, license_fee: ex.license_fee });
     setExampleIdx(i => i + 1);
     setFileName(""); setUpload({ status: "idle" });
+  }
+
+  function resetForm() {
+    setForm({ title: "", description: "", media_type: "image", source_url: "", license_fee: "0.005" });
+    setFileName(""); setUpload({ status: "idle" });
+    setTx({ status: "idle" });
+    setRegistered(null);
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -91,11 +149,21 @@ export default function RegisterPage() {
     e.preventDefault();
     if (!isConnected || !address) { connect(); return; }
     if (!valid) return;
-    setTx({ status: "pending", message: "Sending transaction..." });
+
+    // Snapshot of cert_ids before the tx — used to identify the new one
+    let knownIds = new Set<number>();
     try {
-      // register_work(title: str, description: str, media_type: str, source_url: str, license_fee: u256) payable
-      // args: 4 strings + 1 wei-as-string-digit (u256 wei overflows Number.MAX_SAFE_INTEGER)
-      // value: BigInt registration fee
+      const client = getReadClient();
+      const ids = await client.readContract({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: "get_creator_works",
+        args: [address] as any,
+      }) as Array<number | bigint | string>;
+      knownIds = new Set((ids || []).map(Number));
+    } catch {}
+
+    setTx({ status: "pending", message: "Sending transaction... AI validators will judge originality." });
+    try {
       const { txHash, timedOut } = await writeContract(
         "register_work",
         [
@@ -103,25 +171,159 @@ export default function RegisterPage() {
           form.description,
           form.media_type,
           form.source_url,
-          weiArg(form.license_fee), // string of digits — NEVER BigInt in args
+          weiArg(form.license_fee),
         ],
-        toWei(REG_FEE) // BigInt
+        toWei(REG_FEE)
       );
       setTx({
         status: timedOut ? "pending" : "success",
         hash: txHash,
         message: timedOut
-          ? "Submitted. AI validators are reaching consensus (30-90s). Check explorer for result."
-          : "Work registered!",
+          ? "Submitted. AI validators are reaching consensus (30-90s). Resolving your cert ID..."
+          : "Work registered! Resolving your cert ID...",
       });
-      if (!timedOut) {
-        setForm({ title: "", description: "", media_type: "image", source_url: "", license_fee: "0.005" });
-        setFileName(""); setUpload({ status: "idle" });
+
+      // Resolve the new work record so we can display cert_id + creativity_score
+      setResolving(true);
+      const work = await findNewlyRegistered(address, knownIds);
+      setResolving(false);
+      if (work) {
+        setRegistered(work);
+        setTx(prev => ({ ...prev, status: "success", message: "Work registered and verified on-chain." }));
+      } else {
+        // Couldn't resolve in time — still show a soft success
+        setTx(prev => ({
+          ...prev,
+          status: "success",
+          message: "Submitted. Consensus may still be pending — check My Works in a moment.",
+        }));
       }
     } catch (err: any) {
+      setResolving(false);
       setTx({ status: "error", message: err?.message || "Transaction failed" });
     }
   }
+
+  // ─── SUCCESS CARD ──────────────────────────────────────────
+  if (registered) {
+    const score = Number(registered.creativity_score);
+    const scoreColor =
+      score >= 80 ? "text-sage-light" :
+      score >= 50 ? "text-amber" :
+      "text-rust";
+
+    return (
+      <div className="min-h-dvh flex flex-col">
+        <Navbar />
+        <main className="flex-1 px-4 sm:px-6 py-10 max-w-2xl mx-auto w-full">
+          <div className="animate-fade-up">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 rounded-full bg-sage-light animate-pulse" />
+              <p className="section-label">Registered on-chain</p>
+            </div>
+            <h1 className="font-display text-3xl sm:text-4xl font-bold text-ink-50 mb-2">
+              Your work is protected.
+            </h1>
+            <p className="text-sm text-ink-300 mb-8">
+              AI validators reached consensus and recorded your work on GenLayer Studionet.
+            </p>
+
+            {/* Big certificate card */}
+            <div className="relative border border-amber/30 bg-gradient-to-br from-ink-800 to-ink-900 rounded-sm p-6 sm:p-8 mb-6 overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 rounded-full opacity-10 pointer-events-none"
+                   style={{ background: "radial-gradient(circle, #C8912A 0%, transparent 70%)" }} />
+
+              <div className="flex items-start justify-between mb-6 gap-4">
+                <div>
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-amber/60 mb-1">Certificate ID</p>
+                  <p className="font-display text-5xl sm:text-6xl font-bold text-amber leading-none">
+                    #{String(registered.cert_id).padStart(4, "0")}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-ink-500 mb-1">Creativity Score</p>
+                  <p className={`font-display text-5xl sm:text-6xl font-bold leading-none ${scoreColor}`}>
+                    {score}
+                  </p>
+                  <p className="text-[10px] font-mono text-ink-500 mt-1">of 100</p>
+                </div>
+              </div>
+
+              {/* Score bar */}
+              <div className="mb-6">
+                <div className="h-1 bg-ink-700 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber to-amber-light transition-all duration-1000"
+                    style={{ width: `${score}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-mono text-ink-500 mt-1">
+                  <span>derivative</span>
+                  <span>original</span>
+                  <span>exceptional</span>
+                </div>
+              </div>
+
+              <div className="divider mb-5" />
+
+              <h3 className="font-display text-lg font-semibold text-ink-100 mb-2 leading-snug">
+                {registered.title}
+              </h3>
+              <p className="text-xs text-ink-300 line-clamp-2 mb-5 leading-relaxed">
+                {registered.description}
+              </p>
+
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p className="text-ink-500 mb-1">Creator</p>
+                  <p className="font-mono text-ink-200">{shortAddr(registered.creator)}</p>
+                </div>
+                <div>
+                  <p className="text-ink-500 mb-1">License fee</p>
+                  <p className="font-mono text-ink-200">{fromWeiStr(registered.license_fee_wei)} GEN</p>
+                </div>
+                <div>
+                  <p className="text-ink-500 mb-1">Media type</p>
+                  <p className="font-mono text-ink-200 uppercase">{registered.media_type}</p>
+                </div>
+                <div>
+                  <p className="text-ink-500 mb-1">Status</p>
+                  <p className="font-mono text-sage-light">active</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Tx receipt small */}
+            {tx.hash && (
+              <a
+                href={`https://studio.genlayer.com/tx/${tx.hash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-2 mb-6 p-3 border border-ink-700 rounded-sm hover:border-amber/40 transition-colors group"
+              >
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-wider text-ink-500 mb-0.5">Transaction</p>
+                  <p className="font-mono text-xs text-ink-200 truncate">{tx.hash}</p>
+                </div>
+                <svg className="w-4 h-4 text-ink-400 group-hover:text-amber transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            )}
+
+            {/* Actions */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Link href="/my-works" className="btn-primary text-center">View in My Works</Link>
+              <button onClick={resetForm} className="btn-secondary">Register another</button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // ─── PENDING CONSENSUS UI ──────────────────────────────────
+  const pending = tx.status === "pending" || resolvingWork;
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -144,7 +346,33 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="space-y-5 animate-fade-up delay-100">
+        {/* Consensus visualizer */}
+        {pending && (
+          <div className="mb-6 border border-amber/30 bg-amber/5 rounded-sm p-5 animate-fade-up">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-2 h-2 rounded-full bg-amber animate-pulse" />
+              <p className="text-sm font-medium text-amber">
+                {resolvingWork ? "Reading consensus result..." : "AI validators are judging your work"}
+              </p>
+            </div>
+            <div className="grid grid-cols-5 gap-1.5 mb-2">
+              {[0,1,2,3,4].map(i => (
+                <div key={i} className="h-1 bg-amber/20 overflow-hidden">
+                  <div
+                    className="h-full bg-amber animate-pulse"
+                    style={{ animationDelay: `${i * 150}ms`, animationDuration: "1.4s" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-ink-400 leading-relaxed">
+              5 validators are independently evaluating originality. Optimistic Democracy consensus
+              typically resolves in 30–90 seconds.
+            </p>
+          </div>
+        )}
+
+        <form onSubmit={submit} className={`space-y-5 animate-fade-up delay-100 ${pending ? "opacity-50 pointer-events-none" : ""}`}>
           <div>
             <label className="block text-xs font-mono text-ink-400 mb-2 uppercase tracking-wider">Title *</label>
             <input type="text" className="input-field" placeholder="My Digital Artwork #001"
@@ -225,13 +453,14 @@ export default function RegisterPage() {
             </p>
           </div>
 
-          <button type="submit" className="btn-primary w-full py-3.5 text-base" disabled={tx.status === "pending" || !valid}>
-            {tx.status === "pending"
+          <button type="submit" className="btn-primary w-full py-3.5 text-base" disabled={pending || !valid}>
+            {pending
               ? <><div className="w-4 h-4 border border-ink-900 border-t-transparent rounded-full animate-spin" />Processing...</>
               : !isConnected ? "Connect MetaMask to register"
               : <>Register work <span className="font-mono opacity-70">{REG_FEE} GEN</span></>}
           </button>
-          <TxStatus {...tx} />
+
+          {tx.status !== "idle" && tx.status !== "success" && <TxStatus {...tx} />}
         </form>
       </main>
     </div>

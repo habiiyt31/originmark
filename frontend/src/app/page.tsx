@@ -25,8 +25,11 @@ export default function HomePage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 animate-fade-up delay-300">
               <Link href="/register" className="btn-primary text-base px-8 py-3.5">Register a work</Link>
-              <Link href="/dispute"  className="btn-secondary text-base px-8 py-3.5">File a dispute</Link>
+              <Link href="/explore"  className="btn-secondary text-base px-8 py-3.5">Explore registry</Link>
             </div>
+            <p className="mt-4 text-xs text-ink-500 animate-fade-up delay-300">
+              Or <Link href="/dispute" className="text-amber hover:underline">file a dispute</Link> against an existing work.
+            </p>
           </div>
         </section>
 
@@ -66,6 +69,7 @@ export default function HomePage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link href="/register" className="btn-primary">Start registering</Link>
+              <Link href="/explore"  className="btn-secondary">Browse registry</Link>
               <a href="https://docs.genlayer.com" target="_blank" rel="noopener noreferrer" className="btn-secondary">Read the docs</a>
             </div>
           </div>

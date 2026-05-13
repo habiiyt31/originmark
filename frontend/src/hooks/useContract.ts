@@ -146,3 +146,116 @@ export function useDispute(disputeIdStr: string) {
   useEffect(() => { fetch(); }, [fetch]);
   return { dispute, loading, refetch: fetch };
 }
+
+// ─────────────────────────────────────────────────────────────
+// NEW: useAllWorks — fetch all registered works (for /explore page)
+// Reads get_all_works() which returns full IPRecord[] from contract
+// ─────────────────────────────────────────────────────────────
+export function useAllWorks() {
+  const [works, setWorks]     = useState<IPRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+
+  const fetchAll = useCallback(async () => {
+    if (!isValidContract()) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const client = getReadClient();
+      const result = await client.readContract({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: "get_all_works",
+        args: [],
+      }) as any;
+
+      // Contract bisa return: array of IPRecord OR array of cert_ids
+      // (depending on contract impl). Handle both.
+      if (!Array.isArray(result) || result.length === 0) {
+        setWorks([]);
+        return;
+      }
+
+      const first = result[0];
+      // Case A: array of full IPRecord objects
+      if (first && typeof first === "object" && "cert_id" in first) {
+        setWorks(result as IPRecord[]);
+        return;
+      }
+
+      // Case B: array of cert_ids → fetch each
+      const records = await Promise.all(
+        (result as Array<number | bigint | string>).map(async (id) => {
+          try {
+            const r = await client.readContract({
+              address: CONTRACT_ADDRESS as `0x${string}`,
+              functionName: "get_work",
+              args: [Number(id)] as any,
+            }) as any;
+            return r && r.cert_id !== undefined ? (r as IPRecord) : null;
+          } catch { return null; }
+        })
+      );
+      setWorks(records.filter(Boolean) as IPRecord[]);
+    } catch (e: any) {
+      console.error("get_all_works:", e);
+      setError(e?.message ?? "Failed to load works");
+      setWorks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+  return { works, loading, error, refetch: fetchAll };
+}
+
+// ─────────────────────────────────────────────────────────────
+// NEW: useDisputesForWork — fetch dispute history for a given cert_id
+// Scans total_disputes from stats, then filters by cert_id
+// ─────────────────────────────────────────────────────────────
+export function useDisputesForWork(certId: number | null) {
+  const [disputes, setDisputes] = useState<DisputeRecord[]>([]);
+  const [loading, setLoading]   = useState(false);
+
+  const fetchDisputes = useCallback(async () => {
+    if (certId === null || !isValidContract()) { setDisputes([]); return; }
+    setLoading(true);
+    try {
+      const client = getReadClient();
+      const stats = await client.readContract({
+        address: CONTRACT_ADDRESS as `0x${string}`,
+        functionName: "get_stats",
+        args: [],
+      }) as unknown as ContractStats;
+
+      const total = Number(stats?.total_disputes ?? 0);
+      if (total === 0) { setDisputes([]); return; }
+
+      // Fetch all disputes, filter by cert_id
+      const ids = Array.from({ length: total }, (_, i) => i);
+      const all = await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const r = await client.readContract({
+              address: CONTRACT_ADDRESS as `0x${string}`,
+              functionName: "get_dispute",
+              args: [id] as any,
+            }) as any;
+            return r && r.dispute_id !== undefined ? (r as DisputeRecord) : null;
+          } catch { return null; }
+        })
+      );
+      setDisputes(
+        all.filter((d): d is DisputeRecord => d !== null && Number(d.cert_id) === certId)
+      );
+    } catch (e) {
+      console.error("disputes-for-work:", e);
+      setDisputes([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [certId]);
+
+  useEffect(() => { fetchDisputes(); }, [fetchDisputes]);
+  return { disputes, loading, refetch: fetchDisputes };
+}

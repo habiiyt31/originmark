@@ -2,9 +2,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WalletButton } from "./WalletButton";
+import { NetworkBanner } from "./NetworkBanner";
 import { useState } from "react";
 
 const LINKS = [
+  { href: "/explore",  label: "Explore"  },
   { href: "/register", label: "Register" },
   { href: "/dispute",  label: "Dispute"  },
   { href: "/license",  label: "License"  },
@@ -32,7 +34,8 @@ export function Navbar() {
               </Link>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <NetworkBanner />
             <WalletButton />
             <button onClick={() => setOpen(!open)} className="md:hidden p-2 text-ink-300 hover:text-ink-100" aria-label="Menu">
               <div className="flex flex-col gap-1.5 w-5">

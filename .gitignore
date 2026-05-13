@@ -5,43 +5,45 @@
 # =========================================
 # NODE / NEXT.JS
 # =========================================
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-frontend/build/
-frontend/dist/
+node_modules/
+.next/
+out/
+build/
+dist/
 
 # package manager logs
-frontend/npm-debug.log*
-frontend/yarn-debug.log*
-frontend/yarn-error.log*
-frontend/pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # TypeScript
-frontend/*.tsbuildinfo
+*.tsbuildinfo
+next-env.d.ts
 
 # =========================================
-# ENV FILES
+# ENV FILES  (CRITICAL — contains secrets)
 # =========================================
-frontend/.env
-frontend/.env.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # =========================================
 # PYTHON / GENLAYER
 # =========================================
-contracts/__pycache__/
-contracts/*.py[cod]
-contracts/*.pyo
+__pycache__/
+*.py[cod]
+*.pyo
 
 # Python virtual environment
 venv/
 .venv/
+env/
 
 # GenLayer local files
 .genlayer/
+.gltest/
 
 # =========================================
 # COVERAGE / TEMP
@@ -56,15 +58,21 @@ temp/
 # =========================================
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # =========================================
 # EDITOR FILES
 # =========================================
 .vscode/
 .idea/
-
-# =========================================
-# OPTIONAL
-# =========================================
 *.swp
 *.swo
+*~
+
+# =========================================
+# CREDENTIALS / SECRETS
+# =========================================
+*.pem
+*.key
+secrets.json
+private-keys.txt
