@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OriginMark - On-chain IP Registry",
+  title: "OriginMark",
   description: "Register, protect, and license your creative work on GenLayer.",
 };
 
