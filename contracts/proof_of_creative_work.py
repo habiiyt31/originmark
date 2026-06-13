@@ -116,7 +116,9 @@ class ProofOfCreativeWork(gl.Contract):
 
         result_str = gl.eq_principle.prompt_comparative(
             judge_originality,
-            "The approved boolean field must be identical"
+            "The approved boolean field must be identical. "
+            "The creativity_score integer field must be within 10 points of each other "
+            "(tolerance buffer to account for minor scoring variance between validators)."
         )
         result = json.loads(result_str)
 
@@ -198,7 +200,9 @@ class ProofOfCreativeWork(gl.Contract):
 
         result_str = gl.eq_principle.prompt_comparative(
             judge_infringement,
-            "The verdict field must be identical (infringement/clear/invalid)"
+            "The verdict field must be identical (infringement/clear/invalid). "
+            "The confidence integer field must be within 10 points of each other "
+            "(tolerance buffer to account for minor scoring variance between validators)."
         )
         result = json.loads(result_str)
 
