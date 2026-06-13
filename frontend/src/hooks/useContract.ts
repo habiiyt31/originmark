@@ -223,20 +223,38 @@ export function useDisputesForWork(certId: number | null) {
     try {
       const client = getReadClient();
 
-      // Get exact dispute_count from stats first — avoids brute-forcing
-      // get_dispute(0..49) on every render (RPC spam).
-      const stats = await client.readContract({
-        address: CONTRACT_ADDRESS as `0x${string}`,
-        functionName: "get_stats",
-        args: [],
-      }) as any;
+      // Try to get exact dispute_count from stats first — avoids brute-forcing
+      // get_dispute(0..N) on every render (RPC spam).
+      // get_stats() can transiently fail on Studio ("Error getting the
+      // contract state") even when get_dispute itself works fine — so we
+      // fall back to a small bounded scan instead of giving up entirely.
+      const FALLBACK_SCAN = 10;
+      let totalDisputes: number | null = null;
 
-      const totalDisputes = Number(stats?.total_disputes ?? 0);
-      if (totalDisputes <= 0) { setDisputes([]); return; }
+      try {
+        const stats = await client.readContract({
+          address: CONTRACT_ADDRESS as `0x${string}`,
+          functionName: "get_stats",
+          args: [],
+        }) as any;
+        totalDisputes = Number(stats?.total_disputes ?? 0);
+      } catch (e) {
+        console.warn("get_stats failed, falling back to bounded scan:", e);
+        totalDisputes = null;
+      }
 
-      // Fetch all known disputes in parallel, then filter by cert_id
+      if (totalDisputes !== null && totalDisputes <= 0) {
+        setDisputes([]);
+        return;
+      }
+
+      const scanCount = totalDisputes ?? FALLBACK_SCAN;
+
+      // Fetch all known disputes in parallel, then filter by cert_id.
+      // Missing/erroring IDs (e.g. out of range when using the fallback
+      // cap) resolve to null and are dropped.
       const results = await Promise.all(
-        Array.from({ length: totalDisputes }, (_, id) =>
+        Array.from({ length: scanCount }, (_, id) =>
           client.readContract({
             address: CONTRACT_ADDRESS as `0x${string}`,
             functionName: "get_dispute",
